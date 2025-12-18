@@ -1,6 +1,7 @@
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
+import java.time.Instant;
 
 import org.apache.hadoop.io.WritableComparable;
 
@@ -14,7 +15,7 @@ public class Game implements Cloneable, WritableComparable<Game> {
     public Game() {}
 
     public Game(String date, String playerID, String opponentID, int round) {
-        this.date = date.substring(0, 16); // keep only "YYYY-MM-DD HH:MM"
+        this.date = date;
         this.playerID = playerID;
         this.opponentID = opponentID;
         this.round = round;
@@ -45,13 +46,36 @@ public class Game implements Cloneable, WritableComparable<Game> {
         return null;
     }
 
-    public int compareTo(Game other) {
-        int dateComp = this.date.compareTo(other.date);
-        if (dateComp != 0) return dateComp;
-        int playerComp = this.playerID.compareTo(other.playerID);
-        if (playerComp != 0) return playerComp;
-        int opponentComp = this.opponentID.compareTo(other.opponentID);
-        if (opponentComp != 0) return opponentComp;
-        return Integer.compare(this.round, other.round);
+    @Override
+public int compareTo(Game other) {
+
+    // --- 1. Comparaison des joueurs (ordre indépendant) ---
+    String thisP1 = playerID.compareTo(opponentID) <= 0 ? playerID : opponentID;
+    String thisP2 = playerID.compareTo(opponentID) <= 0 ? opponentID : playerID;
+
+    String otherP1 = other.playerID.compareTo(other.opponentID) <= 0
+            ? other.playerID : other.opponentID;
+    String otherP2 = other.playerID.compareTo(other.opponentID) <= 0
+            ? other.opponentID : other.playerID;
+
+    int cmp = thisP1.compareTo(otherP1);
+    if (cmp != 0) return cmp;
+
+    cmp = thisP2.compareTo(otherP2);
+    if (cmp != 0) return cmp;
+
+    cmp = Integer.compare(this.round, other.round);
+    if (cmp != 0) return cmp;
+
+    long thisTime = Instant.parse(this.date).getEpochSecond();
+    long otherTime = Instant.parse(other.date).getEpochSecond();
+
+    long diff = Math.abs(thisTime - otherTime);
+
+    if (diff <= 10) {
+        return 0; 
     }
+
+    return Long.compare(thisTime, otherTime);
+}
 }

@@ -2,6 +2,8 @@ import java.io.IOException;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
+import org.apache.hadoop.fs.ContentSummary;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.NullWritable;
@@ -97,10 +99,23 @@ public class Filter extends Configured implements Tool {
 		}
         job.setMapperClass(FilterMapper.class);
         job.setReducerClass(FilterReducer.class);
+
+        FileSystem fs = FileSystem.get(conf);
+        ContentSummary cs = fs.getContentSummary(new Path(args[0]));
+        long inputSize = cs.getLength();
+
+        int numReducers = (int) Math.max(1, inputSize / (1024 * 1024 * 1024));
+        System.out.println("Number of reducers: " + numReducers);
+        job.setNumReduceTasks(numReducers);
 		return job.waitForCompletion(true) ? 0 : 1;
     }
     
-    	public static void main(String args[]) throws Exception {
-		System.exit(ToolRunner.run(new Filter(), args));
-	}
+        public static void main(String args[]) throws Exception {
+            long startTime = System.currentTimeMillis();
+            int exitCode = ToolRunner.run(new Filter(), args);
+            long endTime = System.currentTimeMillis();
+            long durationMs = endTime - startTime;
+            System.out.println("Temps d'exécution du filtre : " + durationMs + " ms (" + (durationMs / 1000.0) + " s)");
+            System.exit(exitCode);
+        }
 }
