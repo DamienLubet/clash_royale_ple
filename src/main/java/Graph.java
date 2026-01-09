@@ -1,11 +1,10 @@
 import java.io.IOException;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
-import org.apache.hadoop.fs.ContentSummary;
-import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.NullWritable;
@@ -27,17 +26,49 @@ import com.google.gson.JsonParser;
 
 public class Graph extends Configured implements Tool {
     
-    public static String getArchetype(String deck, int archetypeSize) {
-        // An archetype is defined as the first 'archetypeSize' cards of the deck
-        return deck.substring(0, archetypeSize * 2);
+    
+    public static String[] getArchetype(String deck, int archetypeSize) {
+        if (deck == null || deck.length() < archetypeSize * 2) {
+            return new String[0];
+        }
+
+        List<String> cards = new ArrayList<>();
+        for (int i = 0; i < deck.length(); i += 2) {
+            if (i + 2 <= deck.length()) {
+                cards.add(deck.substring(i, i + 2));
+            }
+        }
+
+        Collections.sort(cards);
+
+        List<String> results = new ArrayList<>();
+        StringBuilder sb = new StringBuilder(archetypeSize * 2);
+        combine(cards, archetypeSize, 0, sb, results);
+
+        return results.toArray(new String[0]);
     }
+
+    private static void combine(List<String> cards, int k, int start, StringBuilder current, List<String> results) {
+        if (k == 0) {
+            results.add(current.toString());
+            return;
+        }
+
+        for (int i = start; i <= cards.size() - k; i++) {
+            int lenBefore = current.length();
+            current.append(cards.get(i));
+            combine(cards, k - 1, i + 1, current, results);
+            current.setLength(lenBefore);
+        }
+    }
+    
 
     public static class GraphMapper extends Mapper<LongWritable, Text, Text, Text> {
 
         JsonParser parser = new JsonParser();
         public int archetypeSize;
-        public Map<EdgeKey, int[]> edgeMap = new HashMap<>();
-        public Map<String, int[]> nodeMap = new HashMap<>();
+        public Text outputKey = new Text();
+        public Text outputValue = new Text();
 
         public void setup(Context context) {
             Configuration conf = context.getConfiguration();
@@ -63,55 +94,51 @@ public class Graph extends Configured implements Tool {
             String player2Deck = player2.get("deck").getAsString();
 
             int winner = jsonObject.get("winner").getAsInt();
-            String archetype1 = getArchetype(player1Deck, archetypeSize);
-            String archetype2 = getArchetype(player2Deck, archetypeSize);
+            String[] archetype1 = getArchetype(player1Deck, archetypeSize);
+            String[] archetype2 = getArchetype(player2Deck, archetypeSize);
+            context.getCounter("Graph", "TotalGames").increment(1);
 
-            updateStats(archetype1, true, winner == 0);
-            updateStats(archetype2, true, winner == 1);
+            int gameCount = 1;
+            int winCount1 = (winner == 0) ? 1 : 0;
+            int winCount2 = (winner == 1) ? 1 : 0;
 
-            // create edge key
-            EdgeKey edge = new EdgeKey(archetype1, archetype2);
-            EdgeKey reverseEdge = new EdgeKey(archetype2, archetype1);
-            int[] edgeValue = new int[2];
-            edgeValue[0] = 1;
-            if (winner == 0)
-                edgeValue[1] = 1;
-            else
-                edgeValue[1] = 0;
+            for (int i = 0; i < archetype1.length; i++) {
+                // Emit node data
+                outputKey.set(archetype1[i]);
+                outputValue.set(gameCount + "," + winCount1);
+                context.write(outputKey, outputValue);
 
-            edgeMap.put(edge, edgeValue);
-            edgeValue[1] = winner == 1 ? 1 : 0;
-            edgeMap.put(reverseEdge, edgeValue);
-        }
+                outputKey.set(archetype2[i]);
+                outputValue.set(gameCount + "," + winCount2);
+                context.write(outputKey, outputValue);
 
-        private void updateStats(String key, boolean played, boolean won) {
-            int[] current = nodeMap.get(key);
-            if (current == null) {
-                current = new int[]{0, 0};
-                nodeMap.put(key, current);
+                // Emit edge data
+                for (int j = 0; j < archetype1.length; j++) {
+                    outputKey.set(archetype1[i] + "," + archetype2[j]);
+                    outputValue.set(gameCount + "," + winCount1);
+                    context.write(outputKey, outputValue);
+
+                    outputKey.set(archetype2[j] + "," + archetype1[i]);
+                    outputValue.set(gameCount + "," + winCount2);
+                    context.write(outputKey, outputValue);
+                }
             }
-            if (played) current[0]++;
-            if (won) current[1]++;
         }
+        
+    }
 
+    public static class GraphCombiner extends Reducer<Text, Text, Text, Text> {
         @Override
-        public void cleanup(Context context) throws IOException, InterruptedException {
-            // Emit nodes
-            for (Map.Entry<String, int[]> entry : nodeMap.entrySet()) {
-                String archetype = entry.getKey();
-                int[] values = entry.getValue();
-                String outValue = values[0] + "," + values[1];
-                context.write(new Text(archetype), new Text(outValue));
+        protected void reduce(Text key, Iterable<Text> values, Context context)
+                throws IOException, InterruptedException {
+            int totalGames = 0;
+            int totalWins = 0;
+            for (Text val : values) {
+                String[] parts = val.toString().split(",");
+                totalGames += Integer.parseInt(parts[0]);
+                totalWins += Integer.parseInt(parts[1]);
             }
-
-            // Emit edges
-            for (Map.Entry<EdgeKey, int[]> entry : edgeMap.entrySet()) {
-                EdgeKey edge = entry.getKey();
-                int[] values = entry.getValue();
-                String key = edge.source + "," + edge.target;
-                String outValue = values[0] + "," + values[1];
-                context.write(new Text(key), new Text(outValue));
-            }
+            context.write(key, new Text(totalGames + "," + totalWins));
         }
     }
 
@@ -134,30 +161,23 @@ public class Graph extends Configured implements Tool {
                 throws IOException, InterruptedException {
             int totalGames = 0;
             int totalWins = 0;
-            if (key.toString().split(",").length == 2) {
-                for (Text val : values) {
-                    // Edge
-                    String[] parts = val.toString().split(",");
-                    int games = Integer.parseInt(parts[0]);
-                    int wins = Integer.parseInt(parts[1]);
-                    totalGames += games;
-                    totalWins += wins;
-                    continue;
-                }
-                String outValue = key.toString() + "," + totalGames + "," + totalWins;
-                multipleOutputs.write("edges", NullWritable.get(), new Text(outValue));
-                return;
-            }
             for (Text val : values) {
-                // Node
                 String[] parts = val.toString().split(",");
-                int games = Integer.parseInt(parts[0]);
-                int wins = Integer.parseInt(parts[1]);
-                totalGames += games;
-                totalWins += wins;
+                totalGames += Integer.parseInt(parts[0]);
+                totalWins += Integer.parseInt(parts[1]);
             }
+
             String outValue = key.toString() + "," + totalGames + "," + totalWins;
-            multipleOutputs.write("nodes", NullWritable.get(), new Text(outValue));
+            context.getCounter("Graph", "UniqueKeys").increment(1);
+            context.getCounter("Graph", "TotalGamesAggregated").increment(totalGames);
+            context.getCounter("Graph", "TotalWinsAggregated").increment(totalWins);
+            if (key.toString().contains(",")) {
+                context.getCounter("Graph", "Edges").increment(1);
+                multipleOutputs.write("edges", NullWritable.get(), new Text(outValue));
+            } else {
+                context.getCounter("Graph", "Nodes").increment(1);
+                multipleOutputs.write("nodes", NullWritable.get(), new Text(outValue));
+            }
         }
     }
     
@@ -184,6 +204,8 @@ public class Graph extends Configured implements Tool {
                 return -1;
             }
             job.getConfiguration().setInt("ArchetypeSize", archetypeSize);
+            conf.set("mapreduce.task.io.sort.mb", "512");
+            conf.set("mapreduce.map.sort.spill.percent", "0.90");
 		} 
 		catch (Exception e) {
 			System.out.println(" bad arguments, waiting for 3 arguments [inputURI] [outputURI] [ArchetypeSize]");
@@ -191,14 +213,14 @@ public class Graph extends Configured implements Tool {
 		}
         job.setMapperClass(GraphMapper.class);
         job.setReducerClass(GraphReducer.class);
+        job.setCombinerClass(GraphCombiner.class);
 
-        FileSystem fs = FileSystem.get(conf);
-        ContentSummary cs = fs.getContentSummary(new Path(args[0]));
-        long inputSize = cs.getLength();
+        // FileSystem fs = FileSystem.get(conf);
+        // ContentSummary cs = fs.getContentSummary(new Path(args[0]));
+        //long inputSize = cs.getLength();
 
-        int numReducers = (int) Math.max(1, inputSize / (1024 * 1024 * 1024));
-        System.out.println("Number of reducers: " + numReducers);
-        job.setNumReduceTasks(numReducers);
+        //int numReducers = (int) Math.max(1, inputSize / (1024 * 1024 * 1024));
+        job.setNumReduceTasks(1);
         MultipleOutputs.addNamedOutput(job, "nodes", TextOutputFormat.class, NullWritable.class, Text.class);
         MultipleOutputs.addNamedOutput(job, "edges", TextOutputFormat.class, NullWritable.class, Text.class);
 		return job.waitForCompletion(true) ? 0 : 1;
