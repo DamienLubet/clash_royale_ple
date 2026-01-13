@@ -28,10 +28,14 @@ public class Stats extends Configured implements Tool {
 
         private final Map<String, Long> archetypeCounts = new HashMap<>();
         private long totalCount = 0L;
+        private int archetypeSize = 2; // taille d'archétype utilisée dans Graph (par défaut 2)
+        private double totalGames = 0.0; // estimation du nombre total de parties
 
         @Override
         protected void setup(Context context) throws IOException, InterruptedException {
             Configuration conf = context.getConfiguration();
+            // même paramètre que dans Graph (si passé), sinon valeur par défaut 2
+            archetypeSize = conf.getInt("ArchetypeSize", 2);
             URI[] cacheFiles = context.getCacheFiles();
             if (cacheFiles == null) {
                 return;
@@ -63,6 +67,30 @@ public class Stats extends Configured implements Tool {
                     }
                 }
             }
+
+            // Dans Graph, chaque partie contribue 2 * C(8, archetypeSize) occurrences de nœuds.
+            // Donc: totalCount = totalGames * 2 * C(8, archetypeSize)
+            //  => totalGames = totalCount / (2 * C(8, archetypeSize))
+            long comb = combinations(8, archetypeSize);
+            if (totalCount > 0L && comb > 0L) {
+                totalGames = (double) totalCount / (2.0 * (double) comb);
+            }
+        }
+
+        // Calcul de C(n, k) pour n petit (ici n = 8)
+        private long combinations(int n, int k) {
+            if (k < 0 || k > n) {
+                return 0L;
+            }
+            if (k == 0 || k == n) {
+                return 1L;
+            }
+            k = Math.min(k, n - k);
+            long result = 1L;
+            for (int i = 1; i <= k; i++) {
+                result = result * (n - (k - i)) / i;
+            }
+            return result;
         }
 
         @Override
@@ -93,14 +121,16 @@ public class Stats extends Configured implements Tool {
 
             Long sourceCountObj = archetypeCounts.get(source);
             Long targetCountObj = archetypeCounts.get(target);
-            if (sourceCountObj == null || targetCountObj == null || totalCount <= 0L) {
+            if (sourceCountObj == null || targetCountObj == null || totalCount <= 0L || totalGames <= 0.0) {
                 return;
             }
 
             long sourceCount = sourceCountObj;
             long targetCount = targetCountObj;
 
-            double prevision = ((double) sourceCount * (double) targetCount) / (double) totalCount;
+            // Prévision basée sur l'hypothèse d'indépendance:
+            // E[count(source,target)] = count(source) * count(target) / totalGames
+            double prevision = ((double) sourceCount * (double) targetCount) / totalGames;
 
             StringBuilder out = new StringBuilder();
             // Archetype source ; Archetype target ; count ; win ; count source,count target ; prevision
