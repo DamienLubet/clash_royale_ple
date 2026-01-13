@@ -1,8 +1,9 @@
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.net.URI;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.apache.hadoop.conf.Configuration;
@@ -12,9 +13,11 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.NullWritable;
+import org.apache.hadoop.mapreduce.lib.input.MultipleInputs;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.Reducer;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
@@ -24,114 +27,104 @@ import org.apache.hadoop.util.ToolRunner;
 
 public class Stats extends Configured implements Tool {
 
-    public static class StatsMapper extends Mapper<LongWritable, Text, NullWritable, Text> {
-
-        private final Map<String, Long> archetypeCounts = new HashMap<>();
-        private long totalCount = 0L;
-
+    public static class NodeMapper extends Mapper<LongWritable, Text, NullWritable, Text> {
         @Override
-        protected void setup(Context context) throws IOException, InterruptedException {
-            Configuration conf = context.getConfiguration();
-            URI[] cacheFiles = context.getCacheFiles();
-            if (cacheFiles == null) {
-                return;
+        public void map(LongWritable key, Text value, Context context)
+                throws IOException, InterruptedException {
+            String line = value.toString().trim();
+            if (line.isEmpty()) return;
+            
+            String[] parts = line.split(",");
+            if (parts.length < 3) return;
+            
+            String archetype = parts[0];
+            String count = parts[1];
+            String win = parts[2];
+
+            context.write(NullWritable.get(), new Text("NODE;" + archetype + ";" + count + ";" + win));
+        }
+    }
+
+    public static class EdgeMapper extends Mapper<LongWritable, Text, NullWritable, Text> {
+        @Override
+        public void map(LongWritable key, Text value, Context context)
+                throws IOException, InterruptedException {
+            String line = value.toString().trim();
+            if (line.isEmpty()) return;
+            
+            String[] parts = line.split(",");
+            if (parts.length < 4) return;
+            
+            String archetypeSource = parts[0];
+            String archetypeTarget = parts[1];
+            String count = parts[2];
+            String win = parts[3];
+
+            context.write(NullWritable.get(), new Text("EDGE;" + archetypeSource + ";" + archetypeTarget + ";" + count + ";" + win));
+        }
+    }
+
+    public static class StatsReducer extends Reducer<NullWritable, Text, NullWritable, Text> {
+        @Override
+        public void reduce(NullWritable key, Iterable<Text> values, Context context)
+                throws IOException, InterruptedException {
+            
+            int archetype = 0;
+            List<String> edgesList = new ArrayList<>();
+            Map<String, Long> nodeList = new HashMap<>();        
+
+            for (Text val : values) {
+                String s = val.toString();
+                
+                if (s.startsWith("NODE;")) {
+                    String[] parts = s.split(";");
+                    String arch = parts[1];
+                    long count = Long.parseLong(parts[2]);
+                    
+                    nodeList.put(arch, count);
+                    archetype += count;
+                } 
+                else if (s.startsWith("EDGE;")) {
+                    edgesList.add(s.substring(5));
+                }
             }
 
-            FileSystem fs = FileSystem.get(conf);
-            for (URI uri : cacheFiles) {
-                Path path = new Path(uri.getPath());
-                try (BufferedReader reader = new BufferedReader(new InputStreamReader(fs.open(path)))) {
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        line = line.trim();
-                        if (line.isEmpty()) {
-                            continue;
-                        }
-                        String[] parts = line.split(",");
-                        if (parts.length < 3) {
-                            continue;
-                        }
-                        String archetype = parts[0];
-                        long count;
-                        try {
-                            count = Long.parseLong(parts[1]);
-                        } catch (NumberFormatException e) {
-                            continue;
-                        }
-                        archetypeCounts.put(archetype, count);
-                        totalCount += count;
-                    }
+            for (String edge : edgesList) {
+                String[] parts = edge.split(";");
+                String source = parts[0];
+                String target = parts[1];
+                String edgeCount = parts[2];
+                String edgeWin = parts[3];
+
+                Long sourceCount = nodeList.getOrDefault(source, 0L);
+                Long targetCount = nodeList.getOrDefault(target, 0L);
+
+
+                if (sourceCount != null && targetCount != null && archetype > 0) {
+                    double prevision = (double) (sourceCount * targetCount) / archetype;
+
+                    StringBuilder sb = new StringBuilder();
+                    sb.append(source).append(";");
+                    sb.append(target).append(";");
+                    sb.append(edgeCount).append(";");
+                    sb.append(edgeWin).append(";");
+                    sb.append(sourceCount).append(";");
+                    sb.append(targetCount).append(";");
+                    sb.append(String.format("%.2f", prevision));
+
+                    context.write(NullWritable.get(), new Text(sb.toString()));
                 }
             }
         }
-
-        @Override
-        protected void map(LongWritable key, Text value, Context context)
-                throws IOException, InterruptedException {
-            String line = value.toString().trim();
-            if (line.isEmpty()) {
-                return;
-            }
-
-            // edges lines are: source,target,count,wins
-            String[] parts = line.split(",");
-            if (parts.length < 4) {
-                return;
-            }
-
-            String source = parts[0];
-            String target = parts[1];
-
-            long count;
-            long wins;
-            try {
-                count = Long.parseLong(parts[2]);
-                wins = Long.parseLong(parts[3]);
-            } catch (NumberFormatException e) {
-                return;
-            }
-
-            Long sourceCountObj = archetypeCounts.get(source);
-            Long targetCountObj = archetypeCounts.get(target);
-            if (sourceCountObj == null || targetCountObj == null || totalCount <= 0L) {
-                return;
-            }
-
-            long sourceCount = sourceCountObj;
-            long targetCount = targetCountObj;
-
-            double prevision = ((double) sourceCount * (double) targetCount) / (double) totalCount;
-
-            StringBuilder out = new StringBuilder();
-            // Archetype source ; Archetype target ; count ; win ; count source,count target ; prevision
-            out.append(source).append(';')
-               .append(target).append(';')
-               .append(count).append(';')
-               .append(wins).append(';')
-               .append(sourceCount).append(',').append(targetCount).append(';')
-               .append(prevision);
-
-            context.write(NullWritable.get(), new Text(out.toString()));
-        }
     }
+
 
     @Override
     public int run(String[] args) throws Exception {
         Configuration conf = getConf();
 
-        if (args.length < 2) {
-            System.out.println("bad arguments, waiting for 2 arguments [graphOutputURI] [statsOutputURI]");
-            return -1;
-        }
-
-        Path graphOutputPath = new Path(args[0]);
-        Path statsOutputPath = new Path(args[1]);
-
         Job job = Job.getInstance(conf, "Stats data");
         job.setJarByClass(Stats.class);
-
-        job.setMapperClass(StatsMapper.class);
-        job.setNumReduceTasks(0); // map-only job
 
         job.setMapOutputKeyClass(NullWritable.class);
         job.setMapOutputValueClass(Text.class);
@@ -141,23 +134,18 @@ public class Stats extends Configured implements Tool {
         job.setInputFormatClass(TextInputFormat.class);
         job.setOutputFormatClass(TextOutputFormat.class);
 
-        // Input: only edges files from Graph output (edges-*)
-        FileInputFormat.addInputPath(job, new Path(graphOutputPath, "edges*"));
-
-        // Add nodes files (nodes-*) to distributed cache
-        FileSystem fs = FileSystem.get(conf);
-        FileStatus[] statuses = fs.listStatus(graphOutputPath);
-        if (statuses != null) {
-            for (FileStatus status : statuses) {
-                String name = status.getPath().getName();
-                if (name.startsWith("nodes")) {
-                    job.addCacheFile(status.getPath().toUri());
-                }
-            }
+        try {
+			MultipleInputs.addInputPath(job, new Path(args[0]), TextInputFormat.class, NodeMapper.class);
+            MultipleInputs.addInputPath(job, new Path(args[1]), TextInputFormat.class, EdgeMapper.class);
+            FileOutputFormat.setOutputPath(job, new Path(args[2]));
+		} 
+        catch (Exception e) {
+            System.out.println(" bad arguments, waiting for 3 arguments [NodeInputURI] [EdgeInputURI] [statsOutputURI]");
+            return -1;
         }
 
-        FileOutputFormat.setOutputPath(job, statsOutputPath);
-
+        job.setReducerClass(StatsReducer.class);
+        job.setNumReduceTasks(1);
         return job.waitForCompletion(true) ? 0 : 1;
     }
 
