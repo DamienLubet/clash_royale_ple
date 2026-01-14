@@ -1,7 +1,10 @@
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
@@ -25,54 +28,27 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
 public class Graph extends Configured implements Tool {
-    
-    
-    public static String[] getArchetype(String deck, int archetypeSize) {
-        if (deck == null || deck.length() < archetypeSize * 2) {
-            return new String[0];
-        }
-
-        List<String> cards = new ArrayList<>();
-        for (int i = 0; i < deck.length(); i += 2) {
-            if (i + 2 <= deck.length()) {
-                cards.add(deck.substring(i, i + 2));
-            }
-        }
-
-        Collections.sort(cards);
-
-        List<String> results = new ArrayList<>();
-        StringBuilder sb = new StringBuilder(archetypeSize * 2);
-        combine(cards, archetypeSize, 0, sb, results);
-
-        return results.toArray(new String[0]);
-    }
-
-    private static void combine(List<String> cards, int k, int start, StringBuilder current, List<String> results) {
-        if (k == 0) {
-            results.add(current.toString());
-            return;
-        }
-
-        for (int i = start; i <= cards.size() - k; i++) {
-            int lenBefore = current.length();
-            current.append(cards.get(i));
-            combine(cards, k - 1, i + 1, current, results);
-            current.setLength(lenBefore);
-        }
-    }
-    
-
-    public static class GraphMapper extends Mapper<LongWritable, Text, Text, Text> {
+    public static class GraphMapper extends Mapper<LongWritable, Text, Text, GraphValue> {
 
         JsonParser parser = new JsonParser();
         public int archetypeSize;
-        public Text outputKey = new Text();
-        public Text outputValue = new Text();
+
+        // Reusable objects
+        public Text outputKey;
+        public GraphValue outputValue = new GraphValue();
+        public StringBuilder sb;
+        public String[] cards;
+        public List<String> archetype1;
+        public List<String> archetype2;
 
         public void setup(Context context) {
             Configuration conf = context.getConfiguration();
             archetypeSize = conf.getInt("ArchetypeSize", 8);
+            sb = new StringBuilder(archetypeSize * 2);
+            cards = new String[8];
+            outputKey = new Text();
+            archetype1 = new ArrayList<>(70);
+            archetype2 = new ArrayList<>(70);
         }
 
         @Override
@@ -94,61 +70,98 @@ public class Graph extends Configured implements Tool {
             String player2Deck = player2.get("deck").getAsString();
 
             int winner = jsonObject.get("winner").getAsInt();
-            String[] archetype1 = getArchetype(player1Deck, archetypeSize);
-            String[] archetype2 = getArchetype(player2Deck, archetypeSize);
+            getArchetype(player1Deck, archetypeSize, cards, sb, archetype1);
+            getArchetype(player2Deck, archetypeSize, cards, sb, archetype2);
             context.getCounter("Graph", "TotalGames").increment(1);
 
-            int gameCount = 1;
-            int winCount1 = (winner == 0) ? 1 : 0;
-            int winCount2 = (winner == 1) ? 1 : 0;
+            long gameCount = 1;
+            long winCount1 = (winner == 0) ? 1 : 0;
+            long winCount2 = (winner == 1) ? 1 : 0;
 
-            for (int i = 0; i < archetype1.length; i++) {
+            for (int i = 0; i < archetype1.size(); i++) {
                 // Emit node data
-                outputKey.set(archetype1[i]);
-                outputValue.set(gameCount + "," + winCount1);
+
+                outputValue.win = winCount1;
+                outputValue.count = gameCount;
+                outputKey.set(archetype1.get(i));
                 context.write(outputKey, outputValue);
 
-                outputKey.set(archetype2[i]);
-                outputValue.set(gameCount + "," + winCount2);
+                outputValue.win = winCount2;
+                outputValue.count = gameCount;
+                outputKey.set(archetype2.get(i));
                 context.write(outputKey, outputValue);
-
                 // Emit edge data
-                for (int j = 0; j < archetype1.length; j++) {
-                    outputKey.set(archetype1[i] + "," + archetype2[j]);
-                    outputValue.set(gameCount + "," + winCount1);
+                for (int j = 0; j < archetype2.size(); j++) {
+
+                    outputValue.win = winCount1;
+                    outputValue.count = gameCount;
+                    outputKey.set(archetype1.get(i) + "," + archetype2.get(j));
                     context.write(outputKey, outputValue);
 
-                    outputKey.set(archetype2[j] + "," + archetype1[i]);
-                    outputValue.set(gameCount + "," + winCount2);
+                    outputValue.win = winCount2;
+                    outputValue.count = gameCount;
+                    outputKey.set(archetype2.get(j) + "," + archetype1.get(i));
                     context.write(outputKey, outputValue);
                 }
             }
         }
         
-    }
-
-    public static class GraphCombiner extends Reducer<Text, Text, Text, Text> {
-        @Override
-        protected void reduce(Text key, Iterable<Text> values, Context context)
-                throws IOException, InterruptedException {
-            int totalGames = 0;
-            int totalWins = 0;
-            for (Text val : values) {
-                String[] parts = val.toString().split(",");
-                totalGames += Integer.parseInt(parts[0]);
-                totalWins += Integer.parseInt(parts[1]);
+        public static void getArchetype(String deck, int archetypeSize, String[] cards, StringBuilder sb, List<String> results) {
+            if (deck == null || deck.length() < archetypeSize * 2) {
+                return;
             }
-            context.write(key, new Text(totalGames + "," + totalWins));
+
+            sb.setLength(0);
+            results.clear();
+
+            for (int i = 0; i < deck.length(); i += 2) {
+                if (i + 2 <= deck.length()) {
+                    String card = deck.substring(i, i + 2);
+                    cards[i / 2] = card;
+                }
+            }
+
+            Arrays.sort(cards);
+            combine(cards, archetypeSize, 0, sb, results);
+        }
+
+        private static void combine( String[] cards, int k, int start, StringBuilder current, List<String> results) {
+            if (k == 0) {
+                results.add(current.toString());
+                return;
+            }
+
+            for (int i = start; i <= cards.length - k; i++) {
+                int lenBefore = current.length();
+                current.append(cards[i]);
+                combine(cards, k - 1, i + 1, current, results);
+                current.setLength(lenBefore);
+            }
         }
     }
 
-    public static class GraphReducer extends Reducer<Text, Text, NullWritable, Text> {
+    public static class GraphCombiner extends Reducer<Text, GraphValue, Text, GraphValue> {
+        GraphValue outputValue = new GraphValue();
+        @Override
+        protected void reduce(Text key, Iterable<GraphValue> values, Context context)
+                throws IOException, InterruptedException {
+            long totalGames = 0;
+            long totalWins = 0;
+            for (GraphValue val : values) {
+                totalGames += val.count;
+                totalWins += val.win;
+            }
+            outputValue.count = totalGames;
+            outputValue.win = totalWins;
+            context.write(key, outputValue);
+        }
+    }
+
+    public static class GraphReducer extends Reducer<Text, GraphValue, NullWritable, Text> {
         MultipleOutputs<NullWritable, Text> multipleOutputs;
-        int archetypeSize;
+        
 
         public void setup(Context context) {
-            Configuration conf = context.getConfiguration();
-            archetypeSize = conf.getInt("ArchetypeSize", 8);
             multipleOutputs = new MultipleOutputs<>(context);
         }
 
@@ -157,14 +170,13 @@ public class Graph extends Configured implements Tool {
         }
 
         @Override
-        protected void reduce(Text key, Iterable<Text> values, Context context)
+        protected void reduce(Text key, Iterable<GraphValue> values, Context context)
                 throws IOException, InterruptedException {
-            int totalGames = 0;
-            int totalWins = 0;
-            for (Text val : values) {
-                String[] parts = val.toString().split(",");
-                totalGames += Integer.parseInt(parts[0]);
-                totalWins += Integer.parseInt(parts[1]);
+            long totalGames = 0;
+            long totalWins = 0;
+            for (GraphValue val : values) {
+                totalGames += val.count;
+                totalWins += val.win;
             }
 
             String outValue = key.toString() + "," + totalGames + "," + totalWins;
@@ -189,7 +201,7 @@ public class Graph extends Configured implements Tool {
         job.setJarByClass(Graph.class);
         
         job.setMapOutputKeyClass(Text.class);
-        job.setMapOutputValueClass(Text.class);
+        job.setMapOutputValueClass(GraphValue.class);
         job.setOutputKeyClass(NullWritable.class);
         job.setOutputValueClass(Text.class);
         job.setInputFormatClass(TextInputFormat.class);
@@ -198,29 +210,27 @@ public class Graph extends Configured implements Tool {
 			FileInputFormat.addInputPath(job, new Path(args[0]));
             FileOutputFormat.setOutputPath(job, new Path(args[1]));
             int archetypeSize = Integer.parseInt(args[2]);
+            int numReducer = Integer.parseInt(args[3]);
+            if (numReducer <= 0) {
+                numReducer = 1;
+            }
+            job.setNumReduceTasks(numReducer);
             System.out.println("Archetype Size: " + archetypeSize);
             if (archetypeSize <= 0 || archetypeSize > 8) {
                 System.out.println("ArchetypeSize must be between 1 and 8");
                 return -1;
             }
             job.getConfiguration().setInt("ArchetypeSize", archetypeSize);
-            conf.set("mapreduce.task.io.sort.mb", "512");
-            conf.set("mapreduce.map.sort.spill.percent", "0.90");
 		} 
 		catch (Exception e) {
-			System.out.println(" bad arguments, waiting for 3 arguments [inputURI] [outputURI] [ArchetypeSize]");
+			System.out.println(" bad arguments, waiting for 4 arguments [inputURI] [outputURI] [ArchetypeSize] [numReducer]");
 			return -1;
 		}
         job.setMapperClass(GraphMapper.class);
         job.setReducerClass(GraphReducer.class);
         job.setCombinerClass(GraphCombiner.class);
 
-        // FileSystem fs = FileSystem.get(conf);
-        // ContentSummary cs = fs.getContentSummary(new Path(args[0]));
-        //long inputSize = cs.getLength();
 
-        //int numReducers = (int) Math.max(1, inputSize / (1024 * 1024 * 1024));
-        job.setNumReduceTasks(1);
         MultipleOutputs.addNamedOutput(job, "nodes", TextOutputFormat.class, NullWritable.class, Text.class);
         MultipleOutputs.addNamedOutput(job, "edges", TextOutputFormat.class, NullWritable.class, Text.class);
 		return job.waitForCompletion(true) ? 0 : 1;
