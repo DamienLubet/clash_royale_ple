@@ -37,6 +37,7 @@ public class Graph extends Configured implements Tool {
         public Text outputKey;
         public GraphValue outputValue = new GraphValue();
         public StringBuilder sb;
+        public StringBuilder edgeBuilder = new StringBuilder();
         public String[] cards;
         public List<String> archetype1;
         public List<String> archetype2;
@@ -45,6 +46,7 @@ public class Graph extends Configured implements Tool {
             Configuration conf = context.getConfiguration();
             archetypeSize = conf.getInt("ArchetypeSize", 8);
             sb = new StringBuilder(archetypeSize * 2);
+            edgeBuilder = new StringBuilder();
             cards = new String[8];
             outputKey = new Text();
             archetype1 = new ArrayList<>(70);
@@ -77,30 +79,42 @@ public class Graph extends Configured implements Tool {
             long gameCount = 1;
             long winCount1 = (winner == 0) ? 1 : 0;
             long winCount2 = (winner == 1) ? 1 : 0;
+            
+            int size1 = archetype1.size();
+            int size2 = archetype2.size();
 
-            for (int i = 0; i < archetype1.size(); i++) {
-                // Emit node data
-
-                outputValue.win = winCount1;
-                outputValue.count = gameCount;
+            for (int i = 0; i < size1; i++) {
                 outputKey.set(archetype1.get(i));
-                context.write(outputKey, outputValue);
-
-                outputValue.win = winCount2;
                 outputValue.count = gameCount;
-                outputKey.set(archetype2.get(i));
+                outputValue.win = winCount1;
                 context.write(outputKey, outputValue);
-                // Emit edge data
-                for (int j = 0; j < archetype2.size(); j++) {
+            }
 
-                    outputValue.win = winCount1;
+            for (int i = 0; i < size2; i++) {
+                outputKey.set(archetype2.get(i));
+                outputValue.count = gameCount;
+                outputValue.win = winCount2;
+                context.write(outputKey, outputValue);
+            }
+
+           for(int i = 0; i < size1; i++) {
+                String arch1 = archetype1.get(i);
+                for (int j = 0; j < size2; j++) {
+                    String arch2 = archetype2.get(j);
+
+                    edgeBuilder.setLength(0);
+                    edgeBuilder.append(arch1).append(',').append(arch2);
+                    outputKey.set(edgeBuilder.toString());
                     outputValue.count = gameCount;
-                    outputKey.set(archetype1.get(i) + "," + archetype2.get(j));
+                    outputValue.win = (winner == 0) ? 1 : 0;
                     context.write(outputKey, outputValue);
 
-                    outputValue.win = winCount2;
+                    // Edge J2 -> J1
+                    edgeBuilder.setLength(0);
+                    edgeBuilder.append(arch2).append(',').append(arch1);
+                    outputKey.set(edgeBuilder.toString());
                     outputValue.count = gameCount;
-                    outputKey.set(archetype2.get(j) + "," + archetype1.get(i));
+                    outputValue.win = (winner == 1) ? 1 : 0;
                     context.write(outputKey, outputValue);
                 }
             }
@@ -196,6 +210,14 @@ public class Graph extends Configured implements Tool {
     @Override
     public int run(String[] args) throws Exception {
         Configuration conf = getConf();
+
+        conf.set("mapreduce.map.output.compress", "true");
+        conf.set("mapreduce.map.output.compress.codec", "org.apache.hadoop.io.compress.SnappyCodec");
+        conf.set("mapreduce.task.io.sort.mb", "512");
+        conf.set("mapreduce.map.memory.mb", "2048");
+        conf.set("mapreduce.map.sort.spill.percent", "0.90");
+        conf.set("mapreduce.map.java.opts", "-Xmx1638m -XX:+UseG1GC -XX:+UseStringDeduplication");
+
         Job job = Job.getInstance(conf, "Graph data");
         
         job.setJarByClass(Graph.class);
