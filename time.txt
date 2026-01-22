@@ -3,27 +3,51 @@ Edges= 18 923 177
 Nodes= 7222
 Time= 420629ms (420,6s)
 
-100k archetype 7    3 reducers
-Edges= 10 903 929 
-Nodes= 466158
-Time= 70218ms (70,2s)
-
 500k archetype 2    
 Edges= 33 606 670
 Nodes= 7232
 Times= 982990ms (982,99s)
+
+1M archetype 2    6 reducers
+Edges= 38 863 037
+Nodes= 7232
+Times= 773848ms (773.848s)
+
+10M archetype 2     50 reducers (reduire le nombre)
+Edges= 49 508 808
+Nodes= 7232
+Times= 947945 ms (947.945 s)
+
+raw archetype 2    7 reducers
+Edges=51 656 874
+Nodes=7232
+times= 2036616 ms (2036.616 s)
+
+
+archetype 7:
+
+100k archetype 7    3 reducers
+Edges= 10 903 929 
+Nodes= 466158
+Time= 70218ms (70,2s)
 
 500k archetype 7    14 reducers
 Edges= 52 631 115
 Nodes= 2 118 180
 Times= 145415ms (145.415s)
 
-1M archetype 2    
-Edges= 38 863 037
-Nodes= 7232
-Times= 773848ms (773.848s)
+1M archetype 7      30 reducers
+Edges=104 013 949
+Nodes=3 721 701
+Times= 135698ms (135.698s)
 
-10M archetype 2 50 reducers (reduire le nombre)
-Edges= 49 508 808
-Nodes= 7232
-Times= 947945 ms (947.945 s)
+10M archetype 7    70 reducers
+Edges=1 009 722 546
+Nodes=25 505 180
+Times=185393ms (185.393)
+
+raw archetype 7     110 reducers
+Edges=3826586057
+Nodes=80230366
+
+Times=518610 ms (518.61 s)
