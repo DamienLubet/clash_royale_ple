@@ -18,3 +18,5 @@ buildNumber.properties
 
 .vscode/
 raw_data_100K.json
+
+stats/.venv/

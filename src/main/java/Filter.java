@@ -2,8 +2,6 @@ import java.io.IOException;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
-import org.apache.hadoop.fs.ContentSummary;
-import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.NullWritable;
@@ -92,6 +90,8 @@ public class Filter extends Configured implements Tool {
         try {
 			FileInputFormat.addInputPath(job, new Path(args[0]));
 			FileOutputFormat.setOutputPath(job, new Path(args[1]));
+            int numReducers = Integer.parseInt(args[2]);
+            job.setNumReduceTasks(numReducers);
 		} 
 		catch (Exception e) {
 			System.out.println(" bad arguments, waiting for 2 arguments [inputURI] [outputURI]");
@@ -100,13 +100,6 @@ public class Filter extends Configured implements Tool {
         job.setMapperClass(FilterMapper.class);
         job.setReducerClass(FilterReducer.class);
 
-        FileSystem fs = FileSystem.get(conf);
-        ContentSummary cs = fs.getContentSummary(new Path(args[0]));
-        long inputSize = cs.getLength();
-
-        int numReducers = (int) Math.max(1, inputSize / (1024 * 1024 * 1024));
-        System.out.println("Number of reducers: " + numReducers);
-        job.setNumReduceTasks(numReducers);
 		return job.waitForCompletion(true) ? 0 : 1;
     }
     

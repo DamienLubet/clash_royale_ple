@@ -48,8 +48,6 @@ public class Game implements Cloneable, WritableComparable<Game> {
 
     @Override
 public int compareTo(Game other) {
-
-    // --- 1. Comparaison des joueurs (ordre indépendant) ---
     String thisP1 = playerID.compareTo(opponentID) <= 0 ? playerID : opponentID;
     String thisP2 = playerID.compareTo(opponentID) <= 0 ? opponentID : playerID;
 

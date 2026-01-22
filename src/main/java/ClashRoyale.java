@@ -8,6 +8,8 @@ public class ClashRoyale {
 		try {
 			// Add your classes here
 			pgd.addClass("filter", Filter.class, "Filter Clash Royale game data");
+			pgd.addClass("graph", Graph.class, "Build Archetype Graph from Clash Royale game data");
+			pgd.addClass("stats", Stats.class, "Compute stats from archetype graph (nodes & edges)");
 			exitCode = pgd.run(args);
 		} catch (Throwable e1)  {
 			e1.printStackTrace();
