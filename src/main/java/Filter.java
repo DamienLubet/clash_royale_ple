@@ -94,7 +94,7 @@ public class Filter extends Configured implements Tool {
             job.setNumReduceTasks(numReducers);
 		} 
 		catch (Exception e) {
-			System.out.println(" bad arguments, waiting for 2 arguments [inputURI] [outputURI]");
+			System.out.println(" bad arguments, waiting for 3 arguments [inputURI] [outputURI] [numReducers]");
 			return -1;
 		}
         job.setMapperClass(FilterMapper.class);
