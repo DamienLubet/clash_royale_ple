@@ -84,6 +84,8 @@ public class Graph extends Configured implements Tool {
                 outputKey.set(archetype1.get(i));
                 outputValue.count = gameCount;
                 outputValue.win = winCount1;
+                outputValue.loss = 0;
+
                 context.write(outputKey, outputValue);
             }
 
@@ -91,6 +93,8 @@ public class Graph extends Configured implements Tool {
                 outputKey.set(archetype2.get(i));
                 outputValue.count = gameCount;
                 outputValue.win = winCount2;
+                outputValue.loss = 0;
+
                 context.write(outputKey, outputValue);
             }
 
@@ -100,18 +104,20 @@ public class Graph extends Configured implements Tool {
                     String arch2 = archetype2.get(j);
 
                     edgeBuilder.setLength(0);
-                    edgeBuilder.append(arch1).append(',').append(arch2);
+                    if (arch1.compareTo(arch2) < 0) {
+                        edgeBuilder.append(arch1).append(",").append(arch2);
+            
+                        outputValue.count = gameCount;
+                        outputValue.win = winCount1; 
+                        outputValue.loss = winCount2;
+                    } else {
+                        edgeBuilder.append(arch2).append(",").append(arch1);
+                        
+                        outputValue.count = gameCount;
+                        outputValue.win = winCount2; 
+                        outputValue.loss = winCount1;
+                    }
                     outputKey.set(edgeBuilder.toString());
-                    outputValue.count = gameCount;
-                    outputValue.win = (winner == 0) ? 1 : 0;
-                    context.write(outputKey, outputValue);
-
-                    // Edge J2 -> J1
-                    edgeBuilder.setLength(0);
-                    edgeBuilder.append(arch2).append(',').append(arch1);
-                    outputKey.set(edgeBuilder.toString());
-                    outputValue.count = gameCount;
-                    outputValue.win = (winner == 1) ? 1 : 0;
                     context.write(outputKey, outputValue);
                 }
             }
@@ -158,19 +164,23 @@ public class Graph extends Configured implements Tool {
                 throws IOException, InterruptedException {
             long totalGames = 0;
             long totalWins = 0;
+            long totalLosses = 0;
             for (GraphValue val : values) {
                 totalGames += val.count;
                 totalWins += val.win;
+                totalLosses += val.loss;
             }
             outputValue.count = totalGames;
             outputValue.win = totalWins;
+            outputValue.loss = totalLosses;
             context.write(key, outputValue);
         }
     }
 
     public static class GraphReducer extends Reducer<Text, GraphValue, NullWritable, Text> {
         MultipleOutputs<NullWritable, Text> multipleOutputs;
-        
+        Text outputText = new Text();
+        StringBuilder sb = new StringBuilder();
 
         public void setup(Context context) {
             multipleOutputs = new MultipleOutputs<>(context);
@@ -185,21 +195,57 @@ public class Graph extends Configured implements Tool {
                 throws IOException, InterruptedException {
             long totalGames = 0;
             long totalWins = 0;
+            long totalLosses = 0;
             for (GraphValue val : values) {
                 totalGames += val.count;
                 totalWins += val.win;
+                totalLosses += val.loss;
             }
 
-            String outValue = key.toString() + "," + totalGames + "," + totalWins;
-            context.getCounter("Graph", "UniqueKeys").increment(1);
-            context.getCounter("Graph", "TotalGamesAggregated").increment(totalGames);
-            context.getCounter("Graph", "TotalWinsAggregated").increment(totalWins);
-            if (key.toString().contains(",")) {
-                context.getCounter("Graph", "Edges").increment(1);
-                multipleOutputs.write("edges", NullWritable.get(), new Text(outValue));
-            } else {
+            String[] parts = key.toString().split(",");
+            if (parts.length == 2) { // Edge
+                if (parts[0].equals(parts[1])) { // if arch1 == arch2
+                    long doubledGames = totalGames * 2;
+                    long aggregatedWins = totalWins + totalLosses;
+
+                    sb.setLength(0);
+                    sb.append(parts[0]).append(",").append(parts[1])
+                    .append(",").append(doubledGames)
+                    .append(",").append(aggregatedWins);
+                    
+                    outputText.set(sb.toString());
+                    multipleOutputs.write("edges", NullWritable.get(), outputText);
+                    context.getCounter("Graph", "Edges").increment(1);
+                } 
+                else {
+                    sb.setLength(0);
+                    sb.append(parts[0]).append(",").append(parts[1])
+                    .append(",").append(totalGames)
+                    .append(",").append(totalWins);
+                    outputText.set(sb.toString());
+                    multipleOutputs.write("edges", NullWritable.get(), outputText);
+                    
+                    sb.setLength(0);
+                    sb.append(parts[1]).append(",").append(parts[0])
+                    .append(",").append(totalGames)
+                    .append(",").append(totalLosses); 
+                    outputText.set(sb.toString());
+                    multipleOutputs.write("edges", NullWritable.get(), outputText);
+                    context.getCounter("Graph", "Edges").increment(2);
+
+                }
+
+            } else {    // Node
                 context.getCounter("Graph", "Nodes").increment(1);
-                multipleOutputs.write("nodes", NullWritable.get(), new Text(outValue));
+                sb.setLength(0);
+                sb.append(key.toString()) 
+                .append(",")
+                .append(totalGames)
+                .append(",")
+                .append(totalWins);
+                outputText.set(sb.toString());
+
+                multipleOutputs.write("nodes", NullWritable.get(), outputText);
             }
         }
     }
