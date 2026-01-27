@@ -1,4 +1,8 @@
 import java.io.IOException;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
@@ -28,7 +32,7 @@ public class Filter extends Configured implements Tool {
         return deck != null && deck.length() == 16;  
     }
 
-    public static class FilterMapper extends Mapper<LongWritable, Text, Game, Text> {
+    public static class FilterMapper extends Mapper<LongWritable, Text, GameKey, GameValue> {
         JsonParser parser = new JsonParser();
 
         @Override
@@ -61,16 +65,57 @@ public class Filter extends Configured implements Tool {
                 
             String a = player1ID.compareTo(player2ID) < 0 ? player1ID : player2ID;
             String b = player1ID.compareTo(player2ID) < 0 ? player2ID : player1ID;
-            Game game = new Game(date, a, b, round);
-            context.write(game, new Text(json));
+
+            long timestamp;
+            
+            try{
+                timestamp = Instant.parse(date).getEpochSecond();
+            }
+            catch(Exception e){
+                context.getCounter("Filtering Stats", "Invalid Date").increment(1);
+                return;
+            }
+            
+            GameKey game = new GameKey(a, b, round);
+            GameValue gameValue = new GameValue(timestamp, json);
+
+            context.write(game, gameValue);
         }
     }
     
-    public static class FilterReducer extends Reducer<Game, Text, NullWritable, Text> {
+    public static class FilterReducer extends Reducer<GameKey, GameValue, NullWritable, Text> {
         @Override
-        protected void reduce(Game key, Iterable<Text> values, Context context)
+        protected void reduce(GameKey key, Iterable<GameValue> values, Context context)
                 throws IOException, InterruptedException {
-            context.write(NullWritable.get(), values.iterator().next());
+            List<GameValue> matches = new ArrayList<>();
+            for (GameValue value : values) {
+                matches.add(value.clone());
+            }
+
+            if(matches.isEmpty()) {
+                return;
+            }
+
+            Collections.sort(matches);
+
+            GameValue lastAccepted = matches.get(0);
+            context.write(NullWritable.get(), new Text(lastAccepted.json));
+
+            // Check time difference between matches
+            for(int i = 1; i < matches.size(); i++){
+                GameValue current = matches.get(i);
+                
+                long diff = current.timestamp - lastAccepted.timestamp;
+                
+                if(diff > 10){
+                    context.write(NullWritable.get(), new Text(current.json));
+                    lastAccepted = current;
+                }
+                else{
+                    context.getCounter("Filtering Stats", "Duplicate Matches").increment(1);
+                }
+            }
+
         }
     }
     
@@ -81,8 +126,8 @@ public class Filter extends Configured implements Tool {
         
         job.setJarByClass(Filter.class);
         
-        job.setMapOutputKeyClass(Game.class);
-        job.setMapOutputValueClass(Text.class);
+        job.setMapOutputKeyClass(GameKey.class);
+        job.setMapOutputValueClass(GameValue.class);
         job.setOutputKeyClass(NullWritable.class);
         job.setOutputValueClass(Text.class);
         job.setInputFormatClass(TextInputFormat.class);
