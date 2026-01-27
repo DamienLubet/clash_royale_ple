@@ -254,13 +254,6 @@ public class Graph extends Configured implements Tool {
     public int run(String[] args) throws Exception {
         Configuration conf = getConf();
 
-        conf.set("mapreduce.map.output.compress", "true");
-        conf.set("mapreduce.map.output.compress.codec", "org.apache.hadoop.io.compress.SnappyCodec");
-        conf.set("mapreduce.task.io.sort.mb", "512");
-        conf.set("mapreduce.map.memory.mb", "2048");
-        conf.set("mapreduce.map.sort.spill.percent", "0.90");
-        conf.set("mapreduce.map.java.opts", "-Xmx1638m -XX:+UseG1GC -XX:+UseStringDeduplication");
-
         Job job = Job.getInstance(conf, "Graph data");
         
         job.setJarByClass(Graph.class);
