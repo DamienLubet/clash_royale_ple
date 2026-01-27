@@ -2,6 +2,8 @@ import glob
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.colors import LogNorm
+from scipy import stats
 
 
 def load_stats(pattern: str = "./part-*") -> pd.DataFrame:
@@ -16,17 +18,16 @@ def load_stats(pattern: str = "./part-*") -> pd.DataFrame:
                     continue
                 # source;target;count;win;countSource,countTarget;prevision
                 parts = line.split(";")
-                if len(parts) < 6:
+                if len(parts) < 7:
                     continue
                 try:
                     observed = float(parts[2])      # count mesurée
-                    expected = float(parts[5])      # prévision théorique
+                    expected = float(parts[6])      # prévision
                 except ValueError:
                     continue
-                # colonne 0 = mesure observée, colonne 1 = estimation attendue
                 rows.append((observed, expected))
 
-    return pd.DataFrame(rows, columns=["mesure", "estimation"])
+    return pd.DataFrame(rows, columns=["mesure", "prevision"])
 
 
 def main() -> None:
@@ -36,30 +37,42 @@ def main() -> None:
         print("Aucune donnée chargée depuis ./part-*. Vérifie le répertoire de sortie des stats.")
         return
 
-    # x = mesure observée, y = estimation théorique
+    df = df[df["prevision"] > 0].copy()
+
+    # x = mesure observée, y = prevision
     x = df["mesure"].values
-    y = df["estimation"].values
+    y = df["prevision"].values
 
-    # Régression linéaire y = a * x + b
-    a, b = np.polyfit(x, y, 1)
-    y_pred = a * x + b
+    ratio = x / y
 
-    # Coefficient de détermination R^2
-    ss_res = np.sum((y - y_pred) ** 2)
-    ss_tot = np.sum((y - np.mean(y)) ** 2)
-    r2 = 1 - ss_res / ss_tot if ss_tot > 0 else float("nan")
+    slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
+    
+    y_pred = slope * x + intercept
+    r_squared = r_value**2
 
     plt.figure(figsize=(8, 8))
-    plt.scatter(x, y, s=5, alpha=0.3, label="Matchups (mesure vs estimation)")
-    # Seule droite demandée : la régression linéaire
-    plt.plot(x, y_pred, color="red", label=f"Régression linéaire : y = {a:.3f}x + {b:.3f}, R² = {r2:.3f}")
+    sc = plt.scatter(x, y, c=ratio, s=5, alpha=0.5, 
+                     norm=LogNorm(), 
+                     cmap='viridis')
+
+    cbar = plt.colorbar(sc)
+    cbar.solids.set(alpha=1)
+    cbar.set_label('Ratio (mesure / prevision)')
+
+    label_stats = (f"y = {slope:.4f}x + {intercept:.4f}\n"
+                   f"$R^2$ = {r_squared:.4f}\n"
+                   f"p-value = {p_value:.4e}")
+
+    plt.plot(x, y_pred, color="red", label=label_stats)
 
     plt.xlabel("mesures")
-    plt.ylabel("estimations")
-    plt.title("Nuage de points et régression linéaire")
-    plt.legend()
+    plt.ylabel("previsions")
+    plt.title("Scatter et régression linéaire")
+    plt.legend(loc="upper left")
     plt.grid(True)
     plt.tight_layout()
+    output_filename = "resultat_graphique.png"
+    plt.savefig(output_filename)
     plt.show()
 
 
