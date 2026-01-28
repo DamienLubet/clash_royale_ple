@@ -1,7 +1,6 @@
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
-import java.time.Instant;
 
 import org.apache.hadoop.io.WritableComparable;
 

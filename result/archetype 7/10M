@@ -1,0 +1,41 @@
+	Map-Reduce Framework
+		Map input records=9896712
+		Map output records=791736960
+		Map output bytes=23752108800
+		Map output materialized bytes=21914867469
+		Input split bytes=5800
+		Combine input records=791736960
+		Combine output records=653735502
+		Reduce input groups=530376030
+		Reduce shuffle bytes=21914867469
+		Reduce input records=653735502
+		Reduce output records=0
+		Spilled Records=1307471004
+		Shuffled Maps =3500
+		Failed Shuffles=0
+		Merged Map outputs=3500
+		GC time elapsed (ms)=110821
+		CPU time spent (ms)=4913870
+		Physical memory (bytes) snapshot=218265518080
+		Virtual memory (bytes) snapshot=792374505472
+		Total committed heap usage (bytes)=238951596032
+		Peak Map Physical memory (bytes)=2811076608
+		Peak Map Virtual memory (bytes)=5600894976
+		Peak Reduce Physical memory (bytes)=1214005248
+		Peak Reduce Virtual memory (bytes)=7434645504
+	Graph
+		Edges=1009722546
+		Nodes=25505180
+		TotalGames=9896712
+	Shuffle Errors
+		BAD_ID=0
+		CONNECTION=0
+		IO_ERROR=0
+		WRONG_LENGTH=0
+		WRONG_MAP=0
+		WRONG_REDUCE=0
+	File Input Format Counters 
+		Bytes Read=5667086499
+	File Output Format Counters 
+		Bytes Written=0
+Temps d'execution du filtre : 187883 ms (187.883 s)
