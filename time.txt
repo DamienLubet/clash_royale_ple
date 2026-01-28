@@ -1,27 +1,31 @@
 100k archetype 2    3 reducers              
 Edges= 18 923 177
 Nodes= 7222
-Time= 208838ms (208.838s)
+Time= 186891 ms (186.891 s)
+TotalGames=98171
 
-500k archetype 2    
+500k archetype 2    3 reducers (mieux d'en mettre 4)    
 Edges= 33 606 670
 Nodes= 7232
-Times= 505073 ms (505.073 s)
+Times= 339090 ms (339.09 s)
+TotalGames=492026
 
 1M archetype 2    6 reducers
 Edges= 38 863 037
 Nodes= 7232
-Times= 402174 ms (402.174 s)
+Times= 406501 ms (406.501 s)
+TotalGames=984607
 
 10M archetype 2     6 reducers
 Edges= 49 508 808
 Nodes= 7232
-Times= 521646 ms (521.646 s)
+Times= 508001 ms (508.001 s)
+TotalGames=9896712
 
 raw archetype 2    7 reducers
 Edges=51 656 874
 Nodes=7232
-times= 894615 ms (894.615 s)
+times= 885455 ms (885.455 s)
 
 
 archetype 7:
@@ -29,25 +33,26 @@ archetype 7:
 100k archetype 7    3 reducers
 Edges= 10 903 929 
 Nodes= 466 158
-Time= 70218ms (70,2s)
+Time= 60183 ms (60.183 s)
 
 500k archetype 7    14 reducers
 Edges= 52 631 115
 Nodes= 2 118 180
-Times= 89125 ms (89.125 s)
+Times= 73233 ms (73.233 s)
 
 1M archetype 7      30 reducers
 Edges=104 013 949
 Nodes=3 721 701
-Times= 78252 ms (78.252 s)
+Times= 92064 ms (92.064 s)
+
 
 10M archetype 7    70 reducers
 Edges=1 009 722 546
 Nodes=25 505 180
-Times=108539 ms (108.539 s)
+Times=187883 ms (187.883 s)
 
-raw archetype 7     110 reducers
-Edges=3 826 586 057
-Nodes=80 230 366
-
-Times=258584 ms (258.584 s)
+raw archetype 7     110 reducers    (mieux d'en mettre 987)
+Edges= 3 826 586 057
+Nodes= 80 230 366
+TotalGames= 37564750
+Times= 302793 ms (302.793 s)
